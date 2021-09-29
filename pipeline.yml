@@ -84,7 +84,7 @@ Resources:
               Configuration:
                 ConnectionArn: !Ref GitHubConnection
                 FullRepositoryId: !Sub "mauro-fanton/example-aws-cicd"
-                BranchName: 'master'
+                BranchName: 'main'
               RunOrder: 1
         - Name: UnitTests
           Actions:
