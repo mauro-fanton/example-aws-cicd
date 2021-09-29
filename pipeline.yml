@@ -38,7 +38,7 @@ Resources:
                   - "codebuild:BatchGetBuilds"
                   - "codebuild:StartBuild"
                 Resource:
-                  - !Sub "arn:aws:codebuild:*:${AWS::AccountId}:project/UnitTest"
+                  - !Sub "arn:aws:codebuild:*:${AWS::AccountId}:project/UnitTests"
               - Effect: Allow
                 Action:
                   - "iam:GetRole"
