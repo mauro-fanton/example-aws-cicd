@@ -1,18 +1,19 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Resources:
-  CodeBuildServiceRole:
-    Type: 'AWS::IAM::Role'
+  CodePipelineServiceRole:
+    Type: "AWS::IAM::Role"
     Properties:
-      RoleName: "react-pipeline-role"
+      RoleName: "example-pipeline-role"
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
-              Service: 
+              Service:
                 - codepipeline.amazonaws.com
                 - codebuild.amazonaws.com
-            Action: sts:AssumeRole
+            Action: "sts:AssumeRole"
+      Path: /
       Policies:
         - PolicyName: pipeline-policy
           PolicyDocument:
@@ -22,60 +23,156 @@ Resources:
                 Action:
                   - s3:*
                 Resource: "*"
-              - Sid: CloudWatchLogsPolicy
-                Effect: Allow
+              - Effect: Allow
                 Action:
-                  - 'logs:CreateLogGroup'
-                  - 'logs:CreateLogStream'
-                  - 'logs:PutLogEvents'
-                  - 'logs:DeleteLogGroup'
-                Resource: '*'
-              - Sid: S3GetObjectPolicy
-                Effect: Allow
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                  - "logs:DeleteLogGroup"
+                Resource:
+                  - !Sub "arn:aws:logs:*:${AWS::AccountId}:log-group:/aws/codebuild/*"
+                  - !Sub "arn:aws:logs:*:${AWS::AccountId}:log-group:/aws/codebuild/*:log-stream:*"
+                  - !Sub "arn:aws:logs:*:${AWS::AccountId}:log-group:/aws/lambda/*:log-stream:*"
+              - Effect: Allow
                 Action:
-                  - 's3:GetObject'
-                  - 's3:GetObjectVersion'
-                Resource: '*'
-              - Sid: S3PutObjectPolicy
-                Effect: Allow
+                  - "codebuild:BatchGetBuilds"
+                  - "codebuild:StartBuild"
+                Resource:
+                  - !Sub "arn:aws:codebuild:*:${AWS::AccountId}:project/UnitTests"
+              - Effect: Allow
                 Action:
-                  - 's3:PutObject'
-                Resource: '*'
-              - Sid: S3BucketIdentity
-                Effect: Allow
+                  - "iam:GetRole"
+                  - "iam:GetRolePolicy"
+                  - "iam:CreateRole"
+                  - "iam:PutRolePolicy"
+                  - "iam:DeleteRolePolicy"
+                  - "iam:DeleteRole"
+                  - "iam:PassRole"
+                Resource:
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/innovations-*-${AWS::Region}-lambdaRole"
+              - Effect: Allow
                 Action:
-                  - 's3:GetBucketAcl'
-                  - 's3:GetBucketLocation'
-                Resource: '*'
+                  - "iam:GetRole"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                - "lambda:GetFunctionConfiguration"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "iam:CreateRole"
+                  - "iam:DeleteRolePolicy"
+                  - "iam:DeleteRole"
+                  - "iam:PutRolePolicy"
+                  - "iam:PassRole"
+                Resource:
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/innovations-*-IamRoleCustomResources*"
+              - Effect: Allow
+                Action:
+                  - "cloudformation:CreateStack"
+                  - "cloudformation:UpdateStack"
+                  - "cloudformation:DeleteStack"
+                  - "cloudformation:Describe*"
+                  - "cloudformation:List*"
+                  - "cloudformation:Get*"
+                  - "cloudformation:PreviewStackUpdate"
+                  - "cloudformation:ValidateTemplate"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:DeleteLogGroup"
+                  - "logs:DeleteLogStream"
+                  - "logs:DescribeLog*"
+                  - "logs:FilterLogEvents"
+                Resource:
+                  - !Sub "arn:aws:logs:*:${AWS::AccountId}:log-group::log-stream*"
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:DeleteLogGroup"
+                Resource:
+                  - !Sub "arn:aws:logs:*:${AWS::AccountId}:log-group*"
+              - Effect: Allow
+                Action:
+                  - "codestar-connections:ListConnections"
+                  - "codestar-connections:UseConnection"
+                Resource: !Ref GitHubConnection
+              - Effect: Allow
+                Action: 
+                  - "ssm:PutParameter"
+                  - "ssm:GetParameter"
+                Resource:
+                  - !Sub "arn:aws:ssm:*:${AWS::AccountId}:parameter/*"
 
-  CodeBuildSourceCredential:
-    Type: 'AWS::CodeBuild::SourceCredential'
-    Properties: 
-      AuthType: PERSONAL_ACCESS_TOKEN
-      ServerType: GITHUB
-      Token: "{{resolve:secretsmanager:GITHUB_ACCESS:SecretString:GITHUB_ACCESS_TOKEN}}"
-  CodeBuildProject:
-    Type: 'AWS::CodeBuild::Project'
+
+  GitHubConnection:
+    Type: 'AWS::CodeStarConnections::Connection'
+    Properties:
+      ConnectionName: example-connection
+      ProviderType: GitHub  
+  DeployBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties:
+      AccessControl: Private
+      VersioningConfiguration:
+        Status: Suspended
+  CodePipeline:
+    Type: AWS::CodePipeline::Pipeline
     Properties: 
       Name: !Ref 'AWS::StackName'
-      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
-      Source:
-        Type: GITHUB
-        Location: https://github.com/mauro-fanton/example-aws-cicd.git
-        BuildSpec: buildspec.yml
-        Auth:
-          Type: OAUTH
-          Resource: !Ref CodeBuildSourceCredential
-      Artifacts: 
-        Type: NO_ARTIFACTS
-      Triggers:
-        Webhook: true
-        FilterGroups:
-          - - Type: EVENT
-              Pattern: PULL_REQUEST_CREATED, PULL_REQUEST_UPDATED
-            - Type: BASE_REF
-              Pattern: ^refs/heads/main$
+      ArtifactStore:
+        Type: S3
+        Location: !Ref DeployBucket
+      RoleArn: !GetAtt
+        - CodePipelineServiceRole
+        - Arn     
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Get-sources
+              ActionTypeId:
+                Version: '1'
+                Owner: AWS
+                Category: Source
+                Provider: CodeStarSourceConnection
+              OutputArtifacts:
+                - Name: react-code-artifact
+              Configuration:
+                ConnectionArn: !Ref GitHubConnection
+                FullRepositoryId: !Sub "mauro-fanton/example-aws-cicd"
+                BranchName: 'main'
+              RunOrder: 1
+        - Name: UnitTests
+          Actions:
+            - Name: UnitTests
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              RunOrder: 1
+              Configuration:
+                ProjectName: 'UnitTests'
+              InputArtifacts:
+                - Name: react-code-artifact
+
+  UnitTests:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: "UnitTests"
+      ServiceRole: !GetAtt
+        - CodePipelineServiceRole
+        - Arn
+      Artifacts:
+        Type: CODEPIPELINE
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
         Image: aws/codebuild/standard:5.0
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: "buildspec.yml"
+      TimeoutInMinutes: 10 
