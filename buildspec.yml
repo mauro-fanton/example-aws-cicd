@@ -3,5 +3,5 @@ version: 0.2
 phases:
   build:
     commands:
-      - echo Entered the build phase 6
+      - echo Entered the build phase 7
       - echo Build started on `date`
